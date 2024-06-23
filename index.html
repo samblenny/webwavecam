@@ -37,7 +37,8 @@
 <p>work in progress webcam toy<br>
 status: <span id="status">loading...</span></p>
 
-<video id="video" muted>
+<!-- mobile safari's video element is picky -->
+<video id="video" muted playsinline>
 Your browser does not appear to support webcam video.</video>
 
 <script type="module" src="main.js"></script>
