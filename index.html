@@ -4,10 +4,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>WebWaveCam</title>
 <style>
- :root{--F: #ffdcec; --B: #1d1d1d; --H: #25c3c0; --L: #459cda; --O: #aaa;
+ :root{--F: #ffdcec; --B: #1d1d1d; --H: #25c3c0; --L: #459cda; --O: #444;
        --BTN: #32ea39; }
  @media (prefers-color-scheme: light){
-  :root{--F: #101010; --B: #f5f5f5; --H: #313131; --L: #3f40f9; --O: #444;
+  :root{--F: #101010; --B: #f5f5f5; --H: #313131; --L: #3f40f9; --O: #aaa;
         --BTN: #3dff4d; }
  }
  html{ background: var(--B); -webkit-text-size-adjust: none; }
@@ -19,14 +19,25 @@
  h2{ margin: 33px 0 15px -3px; font-size: 22px; color: var(--H); }
  a{ color: var(--L); }
  p,ul{ margin: 11px 0; }
- main{ margin: 0 auto; padding: 2px 25px 115px 25px; max-width: 680px; }
+ main{ margin: 0 auto; padding: 2px 25px 115px 25px; max-width: 692px; }
+ #camera{ float: right; background: var(--BTN); font-size: 18px; padding: 10px;
+  border-radius: 13px; border: 2px solid var(--H); }
+ #camera.on{ background: var(--B); color: var(--F); font-size: 18px; }
+ video{ width: 640px; height: 480px; margin: 10px auto;
+  border: 1px solid var(--O); }
+ @media (width < 692px) { video{ width: 100%; height: auto; } }
 </style>
 </head>
 <body>
 <main>
 <h1>WebWaveCam</h1>
 
-<p>TODO: make stuff</p>
+<button id="camera">Start Camera</button>
+
+<p>work in progress webcam toy<br>
+status: <span id="status">loading...</span></p>
+
+<video id="video">Your browser does not appear to support webcam video.</video>
 
 <script type="module" src="main.js"></script>
 
