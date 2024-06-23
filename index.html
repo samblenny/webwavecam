@@ -25,7 +25,9 @@
  #camera.on{ background: var(--B); color: var(--F); font-size: 18px; }
  video{ width: 640px; height: 480px; margin: 10px auto;
   border: 1px solid var(--O); }
- @media (width < 692px) { video{ width: 100%; height: auto; } }
+ @media (max-width: 691px) { /* try not to overflow narrow screens */
+  video{ width: 100%; height: auto; }
+ }
 </style>
 </head>
 <body>
