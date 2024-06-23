@@ -20,12 +20,15 @@
  a{ color: var(--L); }
  p,ul{ margin: 11px 0; }
  main{ margin: 0 auto; padding: 2px 25px 115px 25px; max-width: 692px; }
- #camera{ float: right; background: var(--BTN); font-size: 18px; padding: 10px;
-  border-radius: 13px; border: 2px solid var(--H); }
- #camera.on{ background: var(--B); color: var(--F); font-size: 18px; }
+ #camera{ float: right; background: var(--BTN); font-size: 1.1em;
+  padding: 10px; border-radius: 13px; border: 2px solid var(--H); }
+ #camera.on{ background: var(--B); color: var(--F); }
  video{ width: 640px; height: 480px; margin: 10px auto;
   border: 1px solid var(--O); }
  @media (max-width: 691px) { /* try not to overflow narrow screens */
+  main{ padding: 2px 13px 115px 13px; }
+  h1{ font-size: 28px; }
+  body{ font-size: 16px; }
   video{ width: 100%; height: auto; }
  }
 </style>
