@@ -23,13 +23,17 @@ function startVideo() {
         CAM_BTN.textContent = 'pause';
         STREAM = stream_;
         navigator.mediaDevices.ondevicechange = deviceChange;
-        VIDEO.srcObject = stream_;    // Start video preview
-        VIDEO.play();
         let cameras = [];
         for(let t of stream_.getTracks()) {
             cameras.push(t.label);
         }
         setStatus(cameras.join(", "));
+        VIDEO.srcObject = stream_;    // Start video preview
+        try {
+            VIDEO.play();
+        } catch (err) {
+            console.log("video.play()", err);
+        }
     })
     .catch((err) => {
         setStatus("failed to start camera");
