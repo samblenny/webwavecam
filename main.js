@@ -16,7 +16,11 @@ function setStatus(s) {
 
 // Attempt to open video stream from default camera
 function startVideo() {
-    const constraints = {video: {width: 640, height: 480}}
+    const constraints = {video: {
+        width: 640,
+        height: 480,
+        facingMode: "environment",
+    }};
     navigator.mediaDevices.getUserMedia(constraints)
     .then((stream_) => {
         CAM_BTN.classList.add('on');  // Update UI button
