@@ -69,8 +69,8 @@ function startVideo() {
         console.log("navigator.mediaDevices missing... iOS lockdown mode?");
         alert("It looks like you might be using an iOS device with lockdown "
          + "mode enabled. If so, you will need to grant an exception for this "
-         + "page in order to use the camera ('AA' menu in URL bar > Website "
-         + "Settings > Lockdown Mode [turn switch off].");
+         + "page in order to use the camera: 'AA' menu in URL bar > Website "
+         + "Settings > Lockdown Mode > [turn switch off]");
         return;
     }
     navigator.mediaDevices.getUserMedia(constraints)
