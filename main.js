@@ -69,7 +69,8 @@ function waveletFwdHaar(w, h, luma) {
     //   See "Building Your Own Wavelets at Home" course notes
     //   by Wim Sweldens and Peter Schröder
     //   Section 1.3 Haar and Lifting
-
+    let rowBuf = new Uint8Array(w);
+    let colBuf = new Uint8Array(h);
     // Loop over all the rows (horizontal average and difference)
     for (let y=0; y<h; y+=1) {
         const rowBase = y * w;
@@ -80,21 +81,13 @@ function waveletFwdHaar(w, h, luma) {
             var b = luma[rowBase+x+1] << 2;
             b = (b - a) >> 1;                  // Difference d/2 = (b - a)/2
             a = a + b;                         // Average      s = a + d/2
-            // Move back from 4x scaled Int32 to 1x Uint8
-            // CAUTION: Average is unsigned, and difference is signed! But,
-            // they both get packed into a UInt8 buffer. Be careful!
-            luma[rowBase+x] = (a >> 2) & 0xff;
-            luma[rowBase+x+1] = (b >> 2) & 0xff;
+            // Store results in Uint8 buffer
+            rowBuf[x>>1]          = (a >> 2) & 0xff;
+            rowBuf[(w>>1)+(x>>1)] = (b >> 2) & 0xff;
         }
-        // De-interleave the horizontal (average, difference) pairs
-        for (let x=0; x<(w>>1); x++) {
-            const xSrc = rowBase + x;
-            const xDst = rowBase + (2 * x);
-            const tmp = luma[xDst];
-            for (let i=xDst; i>xSrc; i--) {
-                luma[i] = luma[i-1];
-            }
-            luma[xSrc] = tmp;
+        // Overwrite the input pixels with buffer of averages and differences
+        for (let x=0; x<w; x++) {
+           luma[rowBase+x] = rowBuf[x];
         }
     }
     // Loop over all the columns (vertical average and difference)
@@ -108,22 +101,13 @@ function waveletFwdHaar(w, h, luma) {
             var b = luma[px1] << 2;
             b = (b - a) >> 1;                  // Difference d/2 = (b - a)/2
             a = a + b;                         // Average      s = a + d/2
-            // Move back from 4x scaled Int32 to 1x Uint8
-            // CAUTION: Average is unsigned, and difference is signed! But,
-            // they both get packed into a UInt8 buffer. Be careful!
-            luma[px0] = (a >> 2) & 0xff;
-            luma[px1] = (b >> 2) & 0xff;
+            // Store results in Uint8 buffer
+            colBuf[y>>1]            = (a >> 2) & 0xff;
+            colBuf[(h>>1) + (y>>1)] = (b >> 2) & 0xff;
         }
-        // De-interleave the vertical (average, difference) pairs
-        for (let y=0; y<(h>>1); y++) {
-            const ySrc = y;
-            const yDst = 2 * y;
-            const tmp = luma[(yDst*w)+x];
-            for (let i=yDst; i>ySrc; i--) {
-                const base = (i*w) + x;
-                luma[base] = luma[base - w];
-            }
-            luma[(ySrc*w)+x] = tmp;
+        // Overwrite the input pixels with buffer of averages and differences
+        for (let y=0; y<h; y++) {
+           luma[(y*w)+x] = colBuf[y];
         }
     }
 }
