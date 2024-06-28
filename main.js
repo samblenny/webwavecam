@@ -9,6 +9,32 @@ const CANVAS = document.querySelector('#canvas');   // Canvas (filter output)
 
 const CTX = CANVAS.getContext("2d", {willReadFrequently: true});
 
+// Wavelet Transform Controls
+const INV_WAVE = document.querySelector('#invWave');  // Inv. wavelet checkbox
+const INV_LUMA = document.querySelector('#invLuma');  // Inv. luma checkbox
+// Noise gate thresholds
+const NGATE1 = document.querySelector('#ngate1');
+const NGATE2 = document.querySelector('#ngate2');
+const NGATE3 = document.querySelector('#ngate3');
+const NGATE4 = document.querySelector('#ngate4');
+const NGATE5 = document.querySelector('#ngate5');
+const NGATE6 = document.querySelector('#ngate6');
+// Gain reduction (right shift by 0..7 bits)
+const GAIN1 = document.querySelector('#gain1');
+const GAIN2 = document.querySelector('#gain2');
+const GAIN3 = document.querySelector('#gain3');
+const GAIN4 = document.querySelector('#gain4');
+const GAIN5 = document.querySelector('#gain5');
+const GAIN6 = document.querySelector('#gain6');
+// Luma bias (+1 left shifted by 0..7 bits)
+const BAIS1 = document.querySelector('#bais1');
+const BAIS2 = document.querySelector('#bais2');
+const BAIS3 = document.querySelector('#bais3');
+const BAIS4 = document.querySelector('#bais4');
+const BAIS5 = document.querySelector('#bais5');
+const BAIS6 = document.querySelector('#bais6');
+
+
 // Detect if HTMLVideoElement.requestVideoFrameCallback can be used to sync
 // frame filtering with the frame updates of the video preview element
 const HAS_RVFC = "requestVideoFrameCallback" in HTMLVideoElement.prototype;
@@ -33,7 +59,7 @@ function lumaFrom(rgba) {
     // The sum of coefficients is 3 + 5 + 1 = 9, which is annoying. If the sum
     // was 8, we could use a shift (>>3). Approximating 5*G' as 4*G', gives:
     //   Y' = (3*R' + 4*G' + B') >> 3
-    const luma = new Uint8ClampedArray(rgba.length >> 2);
+    const luma = new Uint8Array(rgba.length >> 2);
     for (let i=0; i < rgba.length - 4; i += 4) {
         luma[i>>2] = ((3 * rgba[i]) + (4 * rgba[i+1]) + rgba[i+2]) >> 3;
     }
@@ -120,7 +146,73 @@ function waveletFwdHaar(w, h, levels, luma) {
 }
 
 // Inverse Haar wavelet transform
-function waveletInvHaar(w, h, levels, luma) {
+function waveletInvHaar(w, h, levels, luma, noiseGates, gains, biases) {
+    let rowBuf = new Uint8Array(w);
+    let colBuf = new Uint8Array(h);
+    for (let level=levels; level>0; level--) {
+        const ngate = noiseGates[level];
+        const gain = gains[level];
+        const bias = biases[level];
+        const biasBoost = (bias > 0) ? (1 << bias) : 0;
+        // cols and rows define the pixel buffer subregion that the current
+        // level of the wavelet transform operates on. Level 1 does the whole
+        // pixel buffer, level 2 does only the top left quadrant, and so on.
+        const cols = w >> (level-1);
+        const rows = h >> (level-1);
+        // Loop over all the columns (vertical average and difference)
+        for (let x=0; x<cols; x+=1) {
+            // Transform (average, difference) pairs into (y, y+1) pixel pairs
+            for (let y=0; y<rows; y+=2) {
+                const pxAvg = (w * (y>>1)) + x;
+                const pxDiff = (w * ((rows+y)>>1)) + x;
+                let a = luma[pxAvg];                 // average
+                let b = luma[pxDiff] << 24 >> 24;    // sign extend diff
+                b = Math.abs(b) < ngate ? 0 : b;     // gate noise below cutoff
+                // Invert the average and difference
+                a = a - b;
+                b = (b << 1) + a;
+                a = (a >> gain) + biasBoost;
+                b = (b >> gain) + biasBoost;
+                // Clamp to range 0..255 to avoid quantization noise errors
+                a = (a < 0) ? 0 : ((a > 255) ? 255 : a);
+                b = (b < 0) ? 0 : ((b > 255) ? 255 : b);
+                // Store results in Uint8 buffer
+                colBuf[y]   = a & 0xff;
+                colBuf[y+1] = b & 0xff;
+            }
+            // Overwrite input averages and differences with pixels
+            for (let y=0; y<rows; y++) {
+              luma[(y*w)+x] = colBuf[y];
+            }
+        }
+        // Loop over all the rows (horizontal average and difference)
+        for (let y=0; y<rows; y+=1) {
+            const rowBase = y * w;
+            // Transform (average, difference) pairs into (x, x+1) pixel pairs
+            for (let x=0; x<cols; x+=2) {
+                const pxAvg = rowBase + (x>>1);
+                const pxDiff = rowBase + ((cols+x)>>1);
+                let a = luma[pxAvg];                 // average
+                let b = luma[pxDiff] << 24 >> 24;    // sign extend diff
+                b = Math.abs(b) < ngate ? 0 : b;     // gate noise below cutoff
+                // Invert the average and difference
+                a = a - b;
+                b = (b << 1) + a;
+                a = (a >> gain) + biasBoost;
+                b = (b >> gain) + biasBoost;
+                // Clamp to range 0..255 to avoid quantization noise errors
+                a = (a < 0) ? 0 : ((a > 255) ? 255 : a);
+                b = (b < 0) ? 0 : ((b > 255) ? 255 : b);
+                // Store results in Uint8 buffer
+                rowBuf[x]   = a & 0xff;
+                rowBuf[x+1] = b & 0xff;
+            }
+            // Overwrite input averages and differences with pixels
+            for (let x=0; x<cols; x++) {
+                luma[rowBase+x] = rowBuf[x];
+            }
+        }
+    }
 }
 
 // Process video frames
@@ -128,7 +220,31 @@ function handleNewFrame(now, metadata) {
     // Copy video frame from video element to canvas element
     const w = VIDEO.videoWidth;
     const h = VIDEO.videoHeight;
-    const levels = 4;
+    const levels = 6;
+    const noiseGates = [
+        Number(NGATE1.value),
+        Number(NGATE2.value),
+        Number(NGATE3.value),
+        Number(NGATE4.value),
+        Number(NGATE5.value),
+        Number(NGATE6.value),
+    ];
+    const gains = [
+        Number(GAIN1.value),
+        Number(GAIN2.value),
+        Number(GAIN3.value),
+        Number(GAIN4.value),
+        Number(GAIN5.value),
+        Number(GAIN6.value),
+    ];
+    const biases = [
+        Number(BAIS1.value),
+        Number(BAIS2.value),
+        Number(BAIS3.value),
+        Number(BAIS4.value),
+        Number(BAIS5.value),
+        Number(BAIS6.value),
+    ];
     CANVAS.width = w;
     CANVAS.height = h;
     CTX.drawImage(VIDEO, 0, 0, w, h);
@@ -140,7 +256,12 @@ function handleNewFrame(now, metadata) {
     // -- begin filter chain ---
 
     waveletFwdHaar(w, h, levels, luma);
-    // invert(luma);
+    if (INV_WAVE.checked) {
+        waveletInvHaar(w, h, levels, luma, noiseGates, gains, biases);
+    }
+    if (INV_LUMA.checked) {
+        invert(luma);
+    }
 
     // --- end filter chain ---
     // Draw the luma values back to the canvas as RGBA pixels
