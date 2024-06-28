@@ -21,18 +21,9 @@ function setStatus(s) {
     STATUS.textContent = s;
 }
 
-// Process video frames
-function handleNewFrame(now, metadata) {
-    // Copy video frame from video element to canvas element
-    const w = VIDEO.videoWidth;
-    const h = VIDEO.videoHeight;
-    CANVAS.width = w;
-    CANVAS.height = h;
-    CTX.drawImage(VIDEO, 0, 0, w, h);
-    // Apply filter to the pixels of the canvas element
-    const imageData = CTX.getImageData(0, 0, w, h);  // RGBA, row-major order
-    const data = imageData.data;                     // Uint8ClampedArray
-    // Convert RGB to approximate Rec. 601 luma (Y')
+// Return an array of 32-bit RGBA input converted to 8-bit Rec. 601 luma
+function lumaFrom(rgba) {
+    // Convert a 4-byte RGBA pixel to 1-byte approximate Rec. 601 luma (Y')
     // see: https://en.wikipedia.org/wiki/Luma_(video)
     //   Y'[601] = 0.299*R' + 0.587*G' + 0.114*B'
     // The official formula uses floating point coefficients, but the image
@@ -42,14 +33,53 @@ function handleNewFrame(now, metadata) {
     // The sum of coefficients is 3 + 5 + 1 = 9, which is annoying. If the sum
     // was 8, we could use a shift (>>3). Approximating 5*G' as 4*G', gives:
     //   Y' = (3*R' + 4*G' + B') >> 3
-    for (let i=0; i < data.length - 4; i += 4) {
-        const Y = ((3 * data[i]) + (4 * data[i+1]) + data[i+2]) >> 3;
-        data[i] = data[i+1] = data[i+2] = Y;
+    const luma = new Uint8ClampedArray(rgba.length >> 2);
+    for (let i=0; i < rgba.length - 4; i += 4) {
+        luma[i>>2] = ((3 * rgba[i]) + (4 * rgba[i+1]) + rgba[i+2]) >> 3;
     }
+    return luma;
+}
+
+// Exapand pixel values from the luma array into the RGBA array as grayscale
+function expandIntoRGBA(luma, rgba) {
+    // luma is Uint8ClampedArray using 1 byte per pixel
+    // rgba is Uing8ClampedArray using 4 bytes per pixel
+    let i = 0;
+    for (const Y of luma) {
+        rgba[i] = Y;
+        rgba[i+1] = Y;
+        rgba[i+2] = Y;
+        rgba[i+3] = 255;
+        i += 4;
+    }
+}
+
+// Invert brightness values of luma array (should be a Unint8ClampedArray)
+function invert(luma) {
+    let i = 0;
+    for (const Y of luma) {
+        luma[i] = 255 - Y;
+        i++;
+    }
+}
+
+// Process video frames
+function handleNewFrame(now, metadata) {
+    // Copy video frame from video element to canvas element
+    const w = VIDEO.videoWidth;
+    const h = VIDEO.videoHeight;
+    CANVAS.width = w;
+    CANVAS.height = h;
+    CTX.drawImage(VIDEO, 0, 0, w, h);
+    // Apply filter to the pixels of the canvas element
+    // getImageData returns RGBA Uint8ClampedArray of pixels in row-major order
+    const imageData = CTX.getImageData(0, 0, w, h);
+    const rgba = imageData.data;
+    var luma = lumaFrom(rgba);
     // Invert the brightness (make it look like a B&W negative)
-    for (let i=0; i < data.length - 4; i += 4) {
-        data[i] = data[i+1] = data[i+2] = 255 - data[i];
-    }
+    invert(luma);
+    // Draw the luma values back to the canvas as RGBA pixels
+    expandIntoRGBA(luma, rgba);
     CTX.putImageData(imageData, 0, 0);
     // Schedule a callback for the next frame
     if (HAS_RVFC) {
