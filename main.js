@@ -63,6 +63,75 @@ function invert(luma) {
     }
 }
 
+// Forward Haar wavelet transform
+function waveletFwdHaar(w, h, luma) {
+    // Do a lifting scheme in-place Haar wavelet transform
+    //   See "Building Your Own Wavelets at Home" course notes
+    //   by Wim Sweldens and Peter Schröder
+    //   Section 1.3 Haar and Lifting
+
+    // Loop over all the rows (horizontal average and difference)
+    for (let y=0; y<h; y+=1) {
+        const rowBase = y * w;
+        // Transform (x, x+1) pixel pairs into (average, difference) pairs
+        for (let x=0; x<w; x+=2) {
+            // Scale Uint8 up by 4x and do intermediate math as Int32 (signed!)
+            var a = luma[rowBase+x] << 2;
+            var b = luma[rowBase+x+1] << 2;
+            b = (b - a) >> 1;                  // Difference d/2 = (b - a)/2
+            a = a + b;                         // Average      s = a + d/2
+            // Move back from 4x scaled Int32 to 1x Uint8
+            // CAUTION: Average is unsigned, and difference is signed! But,
+            // they both get packed into a UInt8 buffer. Be careful!
+            luma[rowBase+x] = (a >> 2) & 0xff;
+            luma[rowBase+x+1] = (b >> 2) & 0xff;
+        }
+        // De-interleave the horizontal (average, difference) pairs
+        for (let x=0; x<(w>>1); x++) {
+            const xSrc = rowBase + x;
+            const xDst = rowBase + (2 * x);
+            const tmp = luma[xDst];
+            for (let i=xDst; i>xSrc; i--) {
+                luma[i] = luma[i-1];
+            }
+            luma[xSrc] = tmp;
+        }
+    }
+    // Loop over all the columns (vertical average and difference)
+    for (let x=0; x<w; x+=1) {
+        // Transform (y, y+1) pixel pairs into (average, difference) pairs
+        for (let y=0; y<h; y+=2) {
+            const px0 = (y * w) + x;
+            const px1 = px0 + w;
+            // Scale Uint8 up by 4x and do intermediate math as Int32 (signed!)
+            var a = luma[px0] << 2;
+            var b = luma[px1] << 2;
+            b = (b - a) >> 1;                  // Difference d/2 = (b - a)/2
+            a = a + b;                         // Average      s = a + d/2
+            // Move back from 4x scaled Int32 to 1x Uint8
+            // CAUTION: Average is unsigned, and difference is signed! But,
+            // they both get packed into a UInt8 buffer. Be careful!
+            luma[px0] = (a >> 2) & 0xff;
+            luma[px1] = (b >> 2) & 0xff;
+        }
+        // De-interleave the vertical (average, difference) pairs
+        for (let y=0; y<(h>>1); y++) {
+            const ySrc = y;
+            const yDst = 2 * y;
+            const tmp = luma[(yDst*w)+x];
+            for (let i=yDst; i>ySrc; i--) {
+                const base = (i*w) + x;
+                luma[base] = luma[base - w];
+            }
+            luma[(ySrc*w)+x] = tmp;
+        }
+    }
+}
+
+// Inverse Haar wavelet transform
+function waveletInvHaar(w, h, levels, luma) {
+}
+
 // Process video frames
 function handleNewFrame(now, metadata) {
     // Copy video frame from video element to canvas element
@@ -76,8 +145,12 @@ function handleNewFrame(now, metadata) {
     const imageData = CTX.getImageData(0, 0, w, h);
     const rgba = imageData.data;
     var luma = lumaFrom(rgba);
-    // Invert the brightness (make it look like a B&W negative)
-    invert(luma);
+    // -- begin filter chain ---
+
+    waveletFwdHaar(w, h, luma);
+    // invert(luma);
+
+    // --- end filter chain ---
     // Draw the luma values back to the canvas as RGBA pixels
     expandIntoRGBA(luma, rgba);
     CTX.putImageData(imageData, 0, 0);
@@ -90,8 +163,8 @@ function handleNewFrame(now, metadata) {
 // Attempt to open video stream from default camera
 function startVideo() {
     const constraints = {video: {
-        width: 480,
-        height: 480,
+        width: 320,
+        height: 320,
         facingMode: "environment",
         frameRate: 15,
     }};
