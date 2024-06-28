@@ -64,50 +64,57 @@ function invert(luma) {
 }
 
 // Forward Haar wavelet transform
-function waveletFwdHaar(w, h, luma) {
+function waveletFwdHaar(w, h, levels, luma) {
     // Do a lifting scheme in-place Haar wavelet transform
     //   See "Building Your Own Wavelets at Home" course notes
     //   by Wim Sweldens and Peter Schröder
     //   Section 1.3 Haar and Lifting
     let rowBuf = new Uint8Array(w);
     let colBuf = new Uint8Array(h);
-    // Loop over all the rows (horizontal average and difference)
-    for (let y=0; y<h; y+=1) {
-        const rowBase = y * w;
-        // Transform (x, x+1) pixel pairs into (average, difference) pairs
-        for (let x=0; x<w; x+=2) {
-            // Scale Uint8 up by 4x and do intermediate math as Int32 (signed!)
-            var a = luma[rowBase+x] << 2;
-            var b = luma[rowBase+x+1] << 2;
-            b = (b - a) >> 1;                  // Difference d/2 = (b - a)/2
-            a = a + b;                         // Average      s = a + d/2
-            // Store results in Uint8 buffer
-            rowBuf[x>>1]          = (a >> 2) & 0xff;
-            rowBuf[(w>>1)+(x>>1)] = (b >> 2) & 0xff;
+    for (let level=0; level<=levels; level++) {
+        // cols and rows define the pixel buffer subregion that the current
+        // level of the wavelet transform operates on. Level 1 does the whole
+        // pixel buffer, level 2 does only the top left quadrant, and so on.
+        const cols = w >> (level-1);
+        const rows = h >> (level-1);
+        // Loop over all the rows (horizontal average and difference)
+        for (let y=0; y<rows; y+=1) {
+            const rowBase = y * w;
+            // Transform (x, x+1) pixel pairs into (average, difference) pairs
+            for (let x=0; x<cols; x+=2) {
+                // Scale Uint8 up by 4x and do intermediate math as Int32
+                var a = luma[rowBase+x] << 2;
+                var b = luma[rowBase+x+1] << 2;
+                b = (b - a) >> 1;                // Difference d/2 = (b - a)/2
+                a = a + b;                       // Average      s = a + d/2
+                // Store results in Uint8 buffer
+                rowBuf[x>>1]        = (a >> 2) & 0xff;
+                rowBuf[(cols+x)>>1] = (b >> 2) & 0xff;
+            }
+            // Overwrite input pixels with buffer of averages and differences
+            for (let x=0; x<cols; x++) {
+               luma[rowBase+x] = rowBuf[x];
+            }
         }
-        // Overwrite the input pixels with buffer of averages and differences
-        for (let x=0; x<w; x++) {
-           luma[rowBase+x] = rowBuf[x];
-        }
-    }
-    // Loop over all the columns (vertical average and difference)
-    for (let x=0; x<w; x+=1) {
-        // Transform (y, y+1) pixel pairs into (average, difference) pairs
-        for (let y=0; y<h; y+=2) {
-            const px0 = (y * w) + x;
-            const px1 = px0 + w;
-            // Scale Uint8 up by 4x and do intermediate math as Int32 (signed!)
-            var a = luma[px0] << 2;
-            var b = luma[px1] << 2;
-            b = (b - a) >> 1;                  // Difference d/2 = (b - a)/2
-            a = a + b;                         // Average      s = a + d/2
-            // Store results in Uint8 buffer
-            colBuf[y>>1]            = (a >> 2) & 0xff;
-            colBuf[(h>>1) + (y>>1)] = (b >> 2) & 0xff;
-        }
-        // Overwrite the input pixels with buffer of averages and differences
-        for (let y=0; y<h; y++) {
-           luma[(y*w)+x] = colBuf[y];
+        // Loop over all the columns (vertical average and difference)
+        for (let x=0; x<cols; x+=1) {
+            // Transform (y, y+1) pixel pairs into (average, difference) pairs
+            for (let y=0; y<rows; y+=2) {
+                const px0 = (y * w) + x;
+                const px1 = px0 + w;
+                // Scale Uint8 up by 4x and do intermediate math as Int32
+                var a = luma[px0] << 2;
+                var b = luma[px1] << 2;
+                b = (b - a) >> 1;                // Difference d/2 = (b - a)/2
+                a = a + b;                       // Average      s = a + d/2
+                // Store results in Uint8 buffer
+                colBuf[y>>1]        = (a >> 2) & 0xff;
+                colBuf[(rows+y)>>1] = (b >> 2) & 0xff;
+            }
+            // Overwrite input pixels with buffer of averages and differences
+            for (let y=0; y<rows; y++) {
+               luma[(y*w)+x] = colBuf[y];
+            }
         }
     }
 }
@@ -121,6 +128,7 @@ function handleNewFrame(now, metadata) {
     // Copy video frame from video element to canvas element
     const w = VIDEO.videoWidth;
     const h = VIDEO.videoHeight;
+    const levels = 4;
     CANVAS.width = w;
     CANVAS.height = h;
     CTX.drawImage(VIDEO, 0, 0, w, h);
@@ -131,7 +139,7 @@ function handleNewFrame(now, metadata) {
     var luma = lumaFrom(rgba);
     // -- begin filter chain ---
 
-    waveletFwdHaar(w, h, luma);
+    waveletFwdHaar(w, h, levels, luma);
     // invert(luma);
 
     // --- end filter chain ---
