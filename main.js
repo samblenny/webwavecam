@@ -20,13 +20,6 @@ const NGATE3 = document.querySelector('#ngate3');
 const NGATE4 = document.querySelector('#ngate4');
 const NGATE5 = document.querySelector('#ngate5');
 const NGATE6 = document.querySelector('#ngate6');
-// Gain reduction (right shift by 0..7 bits)
-const GAIN1 = document.querySelector('#gain1');
-const GAIN2 = document.querySelector('#gain2');
-const GAIN3 = document.querySelector('#gain3');
-const GAIN4 = document.querySelector('#gain4');
-const GAIN5 = document.querySelector('#gain5');
-const GAIN6 = document.querySelector('#gain6');
 // Luma bias (+1 left shifted by 0..7 bits)
 const BAIS1 = document.querySelector('#bais1');
 const BAIS2 = document.querySelector('#bais2');
@@ -112,7 +105,7 @@ function waveletFwdLinear(w, h, levels, luma) {
             for (let x=0; x<cols; x+=2) {
                 const even1 = rowBase + x;
                 const odd   = rowBase + x + 1;
-                const even2 = rowBase + x + (x+2<cols) ? 2 : 0;
+                const even2 = rowBase + x + ((x+2<cols) ? 2 : 0);
                 const prediction = (luma[even1] + luma[even2]) >> 1;
                 let diff = luma[odd] - prediction;
                 diff = (diff < -128) ? -128 : ((diff > 127) ? 127 : diff);
@@ -123,9 +116,11 @@ function waveletFwdLinear(w, h, levels, luma) {
                 const odd1 = rowBase + x + ((x>0) ? -1 : 1);
                 const even = rowBase + x + 1;
                 const odd2 = rowBase + x + ((x+1<cols) ? 1 : -1);
-                const update = (luma[odd1] + luma[odd2]) >> 1;
+                const diff1 = luma[odd1] << 24 >> 24;           // extend sign!
+                const diff2 = luma[odd2] << 24 >> 24;           // extend sign!
+                const update = (diff1 + diff2) >> 5;    // this shift is tricky
                 let avg = luma[even] + update;
-                avg = (avg < -128) ? -128 : ((avg > 127) ? 127 : avg);
+                avg = (avg < 0) ? 0 : ((avg > 255) ? 255 : avg);
                 luma[even] = avg & 0xff;
             }
             // De-interleave the even and odd signals
@@ -134,7 +129,7 @@ function waveletFwdLinear(w, h, levels, luma) {
                 rowBuf[(cols+x)>>1] = luma[rowBase+x+1];
             }
             for (let x=0; x<cols; x++) {
-                luma[rowBase+x]   = rowBuf[x];
+                luma[rowBase+x] = rowBuf[x];
             }
         }
         // Calculate vertical average and difference signals
@@ -154,10 +149,11 @@ function waveletFwdLinear(w, h, levels, luma) {
                 const even = (y * w) + x;
                 const odd1 = (y>0) ? (even - w) : (even + w);
                 const odd2 = (y+1<rows) ? (even + w) : (even - w);
-                // subtract 1/4 of left odd sample, add 1/4 of right odd signal
-                const update = (luma[odd1] + luma[odd2]) >> 1;
+                const diff1 = luma[odd1] << 24 >> 24;           // extend sign!
+                const diff2 = luma[odd2] << 24 >> 24;           // extend sign!
+                const update = (diff1 + diff2) >> 5;    // this shift is tricky
                 let avg = luma[even] + update;
-                avg = (avg < -128) ? -128 : ((avg > 127) ? 127 : avg);
+                avg = (avg < 0) ? 0 : ((avg > 255) ? 255 : avg);
                 luma[even] = avg & 0xff;
             }
             // De-interleave the even and odd signals
@@ -174,7 +170,81 @@ function waveletFwdLinear(w, h, levels, luma) {
 
 // Inverse linear lifting scheme wavelet transform
 function waveletInvLinear(w, h, levels, luma) {
-    // TODO: implement this
+    let rowBuf = new Uint8Array(w);
+    let colBuf = new Uint8Array(h);
+    for (let level=levels; level>0; level--) {
+        const cols = w >> (level-1);
+        const rows = h >> (level-1);
+        // Invert vertical transform
+        for (let x=0; x<cols; x+=1) {
+            // Restore interleaving of even and odd signals
+            for (let y=0; y<rows; y++) {
+                colBuf[y] = luma[(y*w)+x];
+            }
+            for (let y=0; y<rows; y+=2) {
+                luma[(y*w)+x]     = colBuf[y>>1];
+                luma[((y+1)*w)+x] = colBuf[(rows+y)>>1];
+            }
+            // Restore even samples by inverting update
+            for (let y=0; y<rows; y+=2) {
+                const even = (y * w) + x;
+                const odd1 = (y>0) ? (even - w) : (even + w);
+                const odd2 = (y+1<rows) ? (even + w) : (even - w);
+                const diff1 = luma[odd1] << 24 >> 24;           // extend sign!
+                const diff2 = luma[odd2] << 24 >> 24;           // extend sign!
+                const update = (diff1 + diff2) >> 5;    // this shift is tricky
+                let avg = luma[even] - update;
+                avg = (avg < 0) ? 0 : ((avg > 255) ? 255 : avg);
+                luma[even] = avg & 0xff;
+            }
+            // Restore odd samples by inverting diff against prediction
+            for (let y=0; y<rows; y+=2) {
+                const even1 = (y * w) + x;
+                const odd   = even1 + w;
+                const even2 = (y+2<rows) ? (odd + w) : even1;
+                const prediction = (luma[even1] + luma[even2]) >> 1;
+                let diff = luma[odd] << 24 >> 24;               // extend sign!
+                diff += prediction;
+                diff = (diff < 0) ? 0 : ((diff > 255) ? 255 : diff);
+                luma[odd] = diff & 0xff;
+            }
+        }
+        // Invert horizontal transform
+        for (let y=0; y<rows; y+=1) {
+            const rowBase = y * w;
+            // Restore interleaving of even and odd signals
+            for (let x=0; x<cols; x++) {
+                rowBuf[x] = luma[rowBase+x];
+            }
+            for (let x=0; x<cols; x+=2) {
+                luma[rowBase+x] = rowBuf[x>>1];
+                luma[rowBase+x+1] = rowBuf[(cols+x)>>1];
+            }
+            // Restore even samples by inverting update
+            for (let x=1; x<cols; x+=2) {
+                const odd1 = rowBase + x + ((x>0) ? -1 : 1);
+                const even = rowBase + x + 1;
+                const odd2 = rowBase + x + ((x+1<cols) ? 1 : -1);
+                const diff1 = luma[odd1] << 24 >> 24;           // extend sign!
+                const diff2 = luma[odd2] << 24 >> 24;           // extend sign!
+                const update = (diff1 + diff2) >> 5;    // this shift is tricky
+                let avg = luma[even] - update;
+                avg = (avg < 0) ? 0 : ((avg > 255) ? 255 : avg);
+                luma[even] = avg & 0xff;
+            }
+            // Restore odd samples by inverting diff against prediction
+            for (let x=0; x<cols; x+=2) {
+                const even1 = rowBase + x;
+                const odd   = rowBase + x + 1;
+                const even2 = rowBase + x + ((x+2<cols) ? 2 : 0);
+                const prediction = (luma[even1] + luma[even2]) >> 1;
+                let diff = luma[odd] << 24 >> 24;               // extend sign!
+                diff += prediction;
+                diff = (diff < 0) ? 0 : ((diff > 255) ? 255 : diff);
+                luma[odd] = diff & 0xff;
+            }
+        }
+    }
 }
 
 // Forward lifting scheme Haar wavelet transform
@@ -234,12 +304,11 @@ function waveletFwdHaar(w, h, levels, luma) {
 }
 
 // Inverse lifting scheme Haar wavelet transform
-function waveletInvHaar(w, h, levels, luma, noiseGates, gains, biases) {
+function waveletInvHaar(w, h, levels, luma, noiseGates, biases) {
     let rowBuf = new Uint8Array(w);
     let colBuf = new Uint8Array(h);
     for (let level=levels; level>0; level--) {
         const ngate = noiseGates[level];
-        const gain = gains[level];
         const bias = biases[level];
         const biasBoost = (bias > 0) ? (1 << bias) : 0;
         // cols and rows define the pixel buffer subregion that the current
@@ -259,8 +328,8 @@ function waveletInvHaar(w, h, levels, luma, noiseGates, gains, biases) {
                 // Invert the average and difference
                 a = a - b;
                 b = (b << 1) + a;
-                a = (a >> gain) + biasBoost;
-                b = (b >> gain) + biasBoost;
+                a = a + biasBoost;
+                b = b + biasBoost;
                 // Clamp to range 0..255 to avoid quantization noise errors
                 a = (a < 0) ? 0 : ((a > 255) ? 255 : a);
                 b = (b < 0) ? 0 : ((b > 255) ? 255 : b);
@@ -286,8 +355,8 @@ function waveletInvHaar(w, h, levels, luma, noiseGates, gains, biases) {
                 // Invert the average and difference
                 a = a - b;
                 b = (b << 1) + a;
-                a = (a >> gain) + biasBoost;
-                b = (b >> gain) + biasBoost;
+                a = a + biasBoost;
+                b = b + biasBoost;
                 // Clamp to range 0..255 to avoid quantization noise errors
                 a = (a < 0) ? 0 : ((a > 255) ? 255 : a);
                 b = (b < 0) ? 0 : ((b > 255) ? 255 : b);
@@ -317,14 +386,6 @@ function handleNewFrame(now, metadata) {
         Number(NGATE5.value),
         Number(NGATE6.value),
     ];
-    const gains = [
-        Number(GAIN1.value),
-        Number(GAIN2.value),
-        Number(GAIN3.value),
-        Number(GAIN4.value),
-        Number(GAIN5.value),
-        Number(GAIN6.value),
-    ];
     const biases = [
         Number(BAIS1.value),
         Number(BAIS2.value),
@@ -347,13 +408,13 @@ function handleNewFrame(now, metadata) {
     case "Haar":
         waveletFwdHaar(w, h, levels, luma);
         if (INV_WAVE.checked) {
-            waveletInvHaar(w, h, levels, luma, noiseGates, gains, biases);
+            waveletInvHaar(w, h, levels, luma, noiseGates, biases);
         }
         break;
     case "Linear":
         waveletFwdLinear(w, h, levels, luma);
         if (INV_WAVE.checked) {
-            waveletInvLinear(w, h, levels, luma, noiseGates, gains, biases);
+            waveletInvLinear(w, h, levels, luma);
         }
         break;
     }
