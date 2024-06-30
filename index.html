@@ -30,7 +30,7 @@
   padding: 10px; border-radius: 13px; border: 2px solid var(--H); }
  #camera.on{ background: var(--B); color: var(--F); }
  video,canvas{ display: inline-block; width: var(--VidSize); height: auto;
-  margin: 10px auto; border: 1px solid var(--O); }
+  margin: 10px auto; background: var(--O); }
  @media (max-width: 692px) { /* try not to overflow narrow screens */
   :root{--PAD: 13px;}
   h1{ font-size: 28px; }
@@ -74,12 +74,15 @@ Your browser does not appear to support webcam video.</video>
 <label for="squash">squash average</label>
 <input type="checkbox" id="squash" name="squash" checked /><br>
 <label for="sqbias">squash bias</label>
-<input type="range" id="sqbias" min="0" max="255" value="180" step="1" /><br>
+<input type="range" id="sqbias" min="0" max="255" value="155" step="1" /><br>
 <label for="sqlev">squash level</label>
-<input type="range" id="sqlev" min="1" max="8" value="5" step="1" />
+<input type="range" id="sqlev" min="1" max="8" value="4" step="1" />
 <br>
 <label for="invWave">invert wavelet transform</label>
 <input type="checkbox" id="invWave" name="invWave" checked />
+<br>
+<label for="onebit">1-bit</label>
+<input type="checkbox" id="onebit" name="onebit" checked />
 <br>
 <label for="invLuma">invert luma</label>
 <input type="checkbox" id="invLuma" name="invLuma" />

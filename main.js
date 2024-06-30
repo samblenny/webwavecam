@@ -17,6 +17,7 @@ const TRANSFORM = document.querySelector('#transform');  // Haar, linear, etc
 const SQUASH = document.querySelector('#squash');    // Squash average checkbox
 const SQBIAS = document.querySelector('#sqbias');    // Avg squashing luma bias
 const SQLEV = document.querySelector('#sqlev');      // Avg squashing level
+const ONEBIT = document.querySelector('#onebit');    // 1-bit checkbox
 
 // Detect if HTMLVideoElement.requestVideoFrameCallback can be used to sync
 // frame filtering with the frame updates of the video preview element
@@ -68,6 +69,14 @@ function invert(luma) {
     let i = 0;
     for (const Y of luma) {
         luma[i] = 255 - Y;
+        i++;
+    }
+}
+
+function onebit(luma) {
+    let i = 0;
+    for (const Y of luma) {
+        luma[i] = (Y < 128) ? 0 : 255;
         i++;
     }
 }
@@ -400,6 +409,10 @@ function handleNewFrame(now, metadata) {
     }
     if (INV_LUMA.checked) {
         invert(luma);
+    }
+
+    if(ONEBIT.checked) {
+        onebit(luma);
     }
 
     // --- end filter chain ---
