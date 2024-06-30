@@ -56,8 +56,13 @@ Your browser does not appear to support webcam video.</video>
 
 <h2>Wavelet Transform Settings</h2>
 <p>
-<input type="checkbox" id="invWave" name="invWave" checked />
+<input type="checkbox" id="invWave" name="invWave" />
 <label for="invWave">invert wavelet transform</label>
+<label for="transform">transform</label>
+<select name="transform" id="transform">
+ <option value="Linear">Linear</option>
+ <option value="Haar">Haar</option>
+</select>
 <br>
 noise gates:<br>
 <label for="ngate1">1</label>

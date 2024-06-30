@@ -12,6 +12,7 @@ const CTX = CANVAS.getContext("2d", {willReadFrequently: true});
 // Wavelet Transform Controls
 const INV_WAVE = document.querySelector('#invWave');  // Inv. wavelet checkbox
 const INV_LUMA = document.querySelector('#invLuma');  // Inv. luma checkbox
+const TRANSFORM = document.querySelector('#transform');  // Haar, linear, etc
 // Noise gate thresholds
 const NGATE1 = document.querySelector('#ngate1');
 const NGATE2 = document.querySelector('#ngate2');
@@ -89,7 +90,94 @@ function invert(luma) {
     }
 }
 
-// Forward Haar wavelet transform
+// Forward linear lifting scheme wavelet transform
+function waveletFwdLinear(w, h, levels, luma) {
+    /* Do a lifting scheme in-place linear wavelet transform See "Building Your
+    *  Own Wavelets at Home" course notes by Wim Sweldens and Peter Schröder,
+    *  Section 1.5 The Linear Wavelet Transform.
+    *
+    *  cols and rows define the pixel buffer subregion that the current level
+    *  of the wavelet transform operates on. Level 1 does the whole pixel
+    *  buffer, level 2 does only the top left quadrant, and so on.
+    */
+    let rowBuf = new Uint8Array(w);
+    let colBuf = new Uint8Array(h);
+    for (let level=1; level<=levels; level++) {
+        const cols = w >> (level-1);
+        const rows = h >> (level-1);
+        // Calculate horizontal average and difference signals
+        for (let y=0; y<rows; y+=1) {
+            const rowBase = y * w;
+            // Replace odd samples with diff signal = sample - prediction
+            for (let x=0; x<cols; x+=2) {
+                const even1 = rowBase + x;
+                const odd   = rowBase + x + 1;
+                const even2 = rowBase + x + (x+2<cols) ? 2 : 0;
+                const prediction = (luma[even1] + luma[even2]) >> 1;
+                let diff = luma[odd] - prediction;
+                diff = (diff < -128) ? -128 : ((diff > 127) ? 127 : diff);
+                luma[odd] = diff & 0xff;
+            }
+            // Update even samples with diff signal to preserve average value
+            for (let x=1; x<cols; x+=2) {
+                const odd1 = rowBase + x + ((x>0) ? -1 : 1);
+                const even = rowBase + x + 1;
+                const odd2 = rowBase + x + ((x+1<cols) ? 1 : -1);
+                const update = (luma[odd1] + luma[odd2]) >> 1;
+                let avg = luma[even] + update;
+                avg = (avg < -128) ? -128 : ((avg > 127) ? 127 : avg);
+                luma[even] = avg & 0xff;
+            }
+            // De-interleave the even and odd signals
+            for (let x=0; x<cols; x+=2) {
+                rowBuf[x>>1]        = luma[rowBase+x];
+                rowBuf[(cols+x)>>1] = luma[rowBase+x+1];
+            }
+            for (let x=0; x<cols; x++) {
+                luma[rowBase+x]   = rowBuf[x];
+            }
+        }
+        // Calculate vertical average and difference signals
+        for (let x=0; x<cols; x+=1) {
+            // Replace odd samples with diff signal = sample - prediction
+            for (let y=0; y<rows; y+=2) {
+                const even1 = (y * w) + x;
+                const odd   = even1 + w;
+                const even2 = (y+2<rows) ? (odd + w) : even1;
+                const prediction = (luma[even1] + luma[even2]) >> 1;
+                let diff = luma[odd] - prediction;
+                diff = (diff < -128) ? -128 : ((diff > 127) ? 127 : diff);
+                luma[odd] = diff & 0xff;
+            }
+            // Update even samples with diff signal
+            for (let y=0; y<rows; y+=2) {
+                const even = (y * w) + x;
+                const odd1 = (y>0) ? (even - w) : (even + w);
+                const odd2 = (y+1<rows) ? (even + w) : (even - w);
+                // subtract 1/4 of left odd sample, add 1/4 of right odd signal
+                const update = (luma[odd1] + luma[odd2]) >> 1;
+                let avg = luma[even] + update;
+                avg = (avg < -128) ? -128 : ((avg > 127) ? 127 : avg);
+                luma[even] = avg & 0xff;
+            }
+            // De-interleave the even and odd signals
+            for (let y=0; y<rows; y+=2) {
+                colBuf[y>>1]        = luma[(y*w)+x];
+                colBuf[(rows+y)>>1] = luma[((y+1)*w)+x];
+            }
+            for (let y=0; y<rows; y++) {
+                luma[(y*w)+x] = colBuf[y];
+            }
+        }
+    }
+}
+
+// Inverse linear lifting scheme wavelet transform
+function waveletInvLinear(w, h, levels, luma) {
+    // TODO: implement this
+}
+
+// Forward lifting scheme Haar wavelet transform
 function waveletFwdHaar(w, h, levels, luma) {
     // Do a lifting scheme in-place Haar wavelet transform
     //   See "Building Your Own Wavelets at Home" course notes
@@ -97,7 +185,7 @@ function waveletFwdHaar(w, h, levels, luma) {
     //   Section 1.3 Haar and Lifting
     let rowBuf = new Uint8Array(w);
     let colBuf = new Uint8Array(h);
-    for (let level=0; level<=levels; level++) {
+    for (let level=1; level<=levels; level++) {
         // cols and rows define the pixel buffer subregion that the current
         // level of the wavelet transform operates on. Level 1 does the whole
         // pixel buffer, level 2 does only the top left quadrant, and so on.
@@ -109,8 +197,8 @@ function waveletFwdHaar(w, h, levels, luma) {
             // Transform (x, x+1) pixel pairs into (average, difference) pairs
             for (let x=0; x<cols; x+=2) {
                 // Scale Uint8 up by 4x and do intermediate math as Int32
-                var a = luma[rowBase+x] << 2;
-                var b = luma[rowBase+x+1] << 2;
+                let a = luma[rowBase+x] << 2;
+                let b = luma[rowBase+x+1] << 2;
                 b = (b - a) >> 1;                // Difference d/2 = (b - a)/2
                 a = a + b;                       // Average      s = a + d/2
                 // Store results in Uint8 buffer
@@ -129,8 +217,8 @@ function waveletFwdHaar(w, h, levels, luma) {
                 const px0 = (y * w) + x;
                 const px1 = px0 + w;
                 // Scale Uint8 up by 4x and do intermediate math as Int32
-                var a = luma[px0] << 2;
-                var b = luma[px1] << 2;
+                let a = luma[px0] << 2;
+                let b = luma[px1] << 2;
                 b = (b - a) >> 1;                // Difference d/2 = (b - a)/2
                 a = a + b;                       // Average      s = a + d/2
                 // Store results in Uint8 buffer
@@ -145,7 +233,7 @@ function waveletFwdHaar(w, h, levels, luma) {
     }
 }
 
-// Inverse Haar wavelet transform
+// Inverse lifting scheme Haar wavelet transform
 function waveletInvHaar(w, h, levels, luma, noiseGates, gains, biases) {
     let rowBuf = new Uint8Array(w);
     let colBuf = new Uint8Array(h);
@@ -255,9 +343,19 @@ function handleNewFrame(now, metadata) {
     var luma = lumaFrom(rgba);
     // -- begin filter chain ---
 
-    waveletFwdHaar(w, h, levels, luma);
-    if (INV_WAVE.checked) {
-        waveletInvHaar(w, h, levels, luma, noiseGates, gains, biases);
+    switch(TRANSFORM.value) {
+    case "Haar":
+        waveletFwdHaar(w, h, levels, luma);
+        if (INV_WAVE.checked) {
+            waveletInvHaar(w, h, levels, luma, noiseGates, gains, biases);
+        }
+        break;
+    case "Linear":
+        waveletFwdLinear(w, h, levels, luma);
+        if (INV_WAVE.checked) {
+            waveletInvLinear(w, h, levels, luma, noiseGates, gains, biases);
+        }
+        break;
     }
     if (INV_LUMA.checked) {
         invert(luma);
