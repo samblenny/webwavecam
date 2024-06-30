@@ -12,22 +12,11 @@ const CTX = CANVAS.getContext("2d", {willReadFrequently: true});
 // Wavelet Transform Controls
 const INV_WAVE = document.querySelector('#invWave');  // Inv. wavelet checkbox
 const INV_LUMA = document.querySelector('#invLuma');  // Inv. luma checkbox
+const LEVELS = document.querySelector('#levels');     // How many levels?
 const TRANSFORM = document.querySelector('#transform');  // Haar, linear, etc
-// Noise gate thresholds
-const NGATE1 = document.querySelector('#ngate1');
-const NGATE2 = document.querySelector('#ngate2');
-const NGATE3 = document.querySelector('#ngate3');
-const NGATE4 = document.querySelector('#ngate4');
-const NGATE5 = document.querySelector('#ngate5');
-const NGATE6 = document.querySelector('#ngate6');
-// Luma bias (+1 left shifted by 0..7 bits)
-const BAIS1 = document.querySelector('#bais1');
-const BAIS2 = document.querySelector('#bais2');
-const BAIS3 = document.querySelector('#bais3');
-const BAIS4 = document.querySelector('#bais4');
-const BAIS5 = document.querySelector('#bais5');
-const BAIS6 = document.querySelector('#bais6');
-
+const SQUASH = document.querySelector('#squash');    // Squash average checkbox
+const SQBIAS = document.querySelector('#sqbias');    // Avg squashing luma bias
+const SQLEV = document.querySelector('#sqlev');      // Avg squashing level
 
 // Detect if HTMLVideoElement.requestVideoFrameCallback can be used to sync
 // frame filtering with the frame updates of the video preview element
@@ -93,6 +82,9 @@ function waveletFwdLinear(w, h, levels, luma) {
     *  of the wavelet transform operates on. Level 1 does the whole pixel
     *  buffer, level 2 does only the top left quadrant, and so on.
     */
+    const squash = SQUASH.checked;
+    const sqbias = Number(SQBIAS.value);
+    const sqlev = Number(SQLEV.value);
     let rowBuf = new Uint8Array(w);
     let colBuf = new Uint8Array(h);
     for (let level=1; level<=levels; level++) {
@@ -107,7 +99,7 @@ function waveletFwdLinear(w, h, levels, luma) {
                 const odd   = rowBase + x + 1;
                 const even2 = rowBase + x + ((x+2<cols) ? 2 : 0);
                 const prediction = (luma[even1] + luma[even2]) >> 1;
-                let diff = luma[odd] - prediction;
+                let diff = (luma[odd] - prediction) >> 1;      // store at 0.5x
                 diff = (diff < -128) ? -128 : ((diff > 127) ? 127 : diff);
                 luma[odd] = diff & 0xff;
             }
@@ -118,7 +110,7 @@ function waveletFwdLinear(w, h, levels, luma) {
                 const odd2 = rowBase + x + ((x+1<cols) ? 1 : -1);
                 const diff1 = luma[odd1] << 24 >> 24;           // extend sign!
                 const diff2 = luma[odd2] << 24 >> 24;           // extend sign!
-                const update = (diff1 + diff2) >> 5;    // this shift is tricky
+                const update = (diff1 + diff2) >> 7;    // this shift is tricky
                 let avg = luma[even] + update;
                 avg = (avg < 0) ? 0 : ((avg > 255) ? 255 : avg);
                 luma[even] = avg & 0xff;
@@ -140,7 +132,7 @@ function waveletFwdLinear(w, h, levels, luma) {
                 const odd   = even1 + w;
                 const even2 = (y+2<rows) ? (odd + w) : even1;
                 const prediction = (luma[even1] + luma[even2]) >> 1;
-                let diff = luma[odd] - prediction;
+                let diff = (luma[odd] - prediction) >> 1;      // store at 0.5x
                 diff = (diff < -128) ? -128 : ((diff > 127) ? 127 : diff);
                 luma[odd] = diff & 0xff;
             }
@@ -151,14 +143,19 @@ function waveletFwdLinear(w, h, levels, luma) {
                 const odd2 = (y+1<rows) ? (even + w) : (even - w);
                 const diff1 = luma[odd1] << 24 >> 24;           // extend sign!
                 const diff2 = luma[odd2] << 24 >> 24;           // extend sign!
-                const update = (diff1 + diff2) >> 5;    // this shift is tricky
+                const update = (diff1 + diff2) >> 7;    // this shift is tricky
                 let avg = luma[even] + update;
                 avg = (avg < 0) ? 0 : ((avg > 255) ? 255 : avg);
                 luma[even] = avg & 0xff;
             }
             // De-interleave the even and odd signals
             for (let y=0; y<rows; y+=2) {
-                colBuf[y>>1]        = luma[(y*w)+x];
+                let avg = luma[(y*w)+x];
+                if (squash && level==levels && (x<(cols>>1))) {
+                    avg = ((avg << 24 >> 24) - 127) >> sqlev;
+                    avg = (sqbias + avg) & 0xff;
+                }
+                colBuf[y>>1]        = avg;
                 colBuf[(rows+y)>>1] = luma[((y+1)*w)+x];
             }
             for (let y=0; y<rows; y++) {
@@ -192,7 +189,7 @@ function waveletInvLinear(w, h, levels, luma) {
                 const odd2 = (y+1<rows) ? (even + w) : (even - w);
                 const diff1 = luma[odd1] << 24 >> 24;           // extend sign!
                 const diff2 = luma[odd2] << 24 >> 24;           // extend sign!
-                const update = (diff1 + diff2) >> 5;    // this shift is tricky
+                const update = (diff1 + diff2) >> 7;    // this shift is tricky
                 let avg = luma[even] - update;
                 avg = (avg < 0) ? 0 : ((avg > 255) ? 255 : avg);
                 luma[even] = avg & 0xff;
@@ -203,7 +200,7 @@ function waveletInvLinear(w, h, levels, luma) {
                 const odd   = even1 + w;
                 const even2 = (y+2<rows) ? (odd + w) : even1;
                 const prediction = (luma[even1] + luma[even2]) >> 1;
-                let diff = luma[odd] << 24 >> 24;               // extend sign!
+                let diff = luma[odd] << 24 >> 23;  // extend sign, expand to 1x!
                 diff += prediction;
                 diff = (diff < 0) ? 0 : ((diff > 255) ? 255 : diff);
                 luma[odd] = diff & 0xff;
@@ -227,7 +224,7 @@ function waveletInvLinear(w, h, levels, luma) {
                 const odd2 = rowBase + x + ((x+1<cols) ? 1 : -1);
                 const diff1 = luma[odd1] << 24 >> 24;           // extend sign!
                 const diff2 = luma[odd2] << 24 >> 24;           // extend sign!
-                const update = (diff1 + diff2) >> 5;    // this shift is tricky
+                const update = (diff1 + diff2) >> 7;    // this shift is tricky
                 let avg = luma[even] - update;
                 avg = (avg < 0) ? 0 : ((avg > 255) ? 255 : avg);
                 luma[even] = avg & 0xff;
@@ -238,7 +235,7 @@ function waveletInvLinear(w, h, levels, luma) {
                 const odd   = rowBase + x + 1;
                 const even2 = rowBase + x + ((x+2<cols) ? 2 : 0);
                 const prediction = (luma[even1] + luma[even2]) >> 1;
-                let diff = luma[odd] << 24 >> 24;               // extend sign!
+                let diff = luma[odd] << 24 >> 23;  // extend sign, expand to 1x!
                 diff += prediction;
                 diff = (diff < 0) ? 0 : ((diff > 255) ? 255 : diff);
                 luma[odd] = diff & 0xff;
@@ -253,6 +250,9 @@ function waveletFwdHaar(w, h, levels, luma) {
     //   See "Building Your Own Wavelets at Home" course notes
     //   by Wim Sweldens and Peter Schröder
     //   Section 1.3 Haar and Lifting
+    const squash = SQUASH.checked;
+    const sqbias = Number(SQBIAS.value);
+    const sqlev = Number(SQLEV.value);
     let rowBuf = new Uint8Array(w);
     let colBuf = new Uint8Array(h);
     for (let level=1; level<=levels; level++) {
@@ -292,7 +292,12 @@ function waveletFwdHaar(w, h, levels, luma) {
                 b = (b - a) >> 1;                // Difference d/2 = (b - a)/2
                 a = a + b;                       // Average      s = a + d/2
                 // Store results in Uint8 buffer
-                colBuf[y>>1]        = (a >> 2) & 0xff;
+                let avg = (a >> 2) & 0xff;
+                if (squash && level==levels && (x<(cols>>1))) {
+                    avg = ((avg << 24 >> 24) - 127) >> sqlev;
+                    avg = (sqbias + avg) & 0xff;
+                }
+                colBuf[y>>1]        = avg;
                 colBuf[(rows+y)>>1] = (b >> 2) & 0xff;
             }
             // Overwrite input pixels with buffer of averages and differences
@@ -304,13 +309,10 @@ function waveletFwdHaar(w, h, levels, luma) {
 }
 
 // Inverse lifting scheme Haar wavelet transform
-function waveletInvHaar(w, h, levels, luma, noiseGates, biases) {
+function waveletInvHaar(w, h, levels, luma) {
     let rowBuf = new Uint8Array(w);
     let colBuf = new Uint8Array(h);
     for (let level=levels; level>0; level--) {
-        const ngate = noiseGates[level];
-        const bias = biases[level];
-        const biasBoost = (bias > 0) ? (1 << bias) : 0;
         // cols and rows define the pixel buffer subregion that the current
         // level of the wavelet transform operates on. Level 1 does the whole
         // pixel buffer, level 2 does only the top left quadrant, and so on.
@@ -324,12 +326,9 @@ function waveletInvHaar(w, h, levels, luma, noiseGates, biases) {
                 const pxDiff = (w * ((rows+y)>>1)) + x;
                 let a = luma[pxAvg];                 // average
                 let b = luma[pxDiff] << 24 >> 24;    // sign extend diff
-                b = Math.abs(b) < ngate ? 0 : b;     // gate noise below cutoff
                 // Invert the average and difference
                 a = a - b;
                 b = (b << 1) + a;
-                a = a + biasBoost;
-                b = b + biasBoost;
                 // Clamp to range 0..255 to avoid quantization noise errors
                 a = (a < 0) ? 0 : ((a > 255) ? 255 : a);
                 b = (b < 0) ? 0 : ((b > 255) ? 255 : b);
@@ -351,12 +350,9 @@ function waveletInvHaar(w, h, levels, luma, noiseGates, biases) {
                 const pxDiff = rowBase + ((cols+x)>>1);
                 let a = luma[pxAvg];                 // average
                 let b = luma[pxDiff] << 24 >> 24;    // sign extend diff
-                b = Math.abs(b) < ngate ? 0 : b;     // gate noise below cutoff
                 // Invert the average and difference
                 a = a - b;
                 b = (b << 1) + a;
-                a = a + biasBoost;
-                b = b + biasBoost;
                 // Clamp to range 0..255 to avoid quantization noise errors
                 a = (a < 0) ? 0 : ((a > 255) ? 255 : a);
                 b = (b < 0) ? 0 : ((b > 255) ? 255 : b);
@@ -377,23 +373,7 @@ function handleNewFrame(now, metadata) {
     // Copy video frame from video element to canvas element
     const w = VIDEO.videoWidth;
     const h = VIDEO.videoHeight;
-    const levels = 6;
-    const noiseGates = [
-        Number(NGATE1.value),
-        Number(NGATE2.value),
-        Number(NGATE3.value),
-        Number(NGATE4.value),
-        Number(NGATE5.value),
-        Number(NGATE6.value),
-    ];
-    const biases = [
-        Number(BAIS1.value),
-        Number(BAIS2.value),
-        Number(BAIS3.value),
-        Number(BAIS4.value),
-        Number(BAIS5.value),
-        Number(BAIS6.value),
-    ];
+    const levels = Number(LEVELS.value);
     CANVAS.width = w;
     CANVAS.height = h;
     CTX.drawImage(VIDEO, 0, 0, w, h);
@@ -408,7 +388,7 @@ function handleNewFrame(now, metadata) {
     case "Haar":
         waveletFwdHaar(w, h, levels, luma);
         if (INV_WAVE.checked) {
-            waveletInvHaar(w, h, levels, luma, noiseGates, biases);
+            waveletInvHaar(w, h, levels, luma);
         }
         break;
     case "Linear":

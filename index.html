@@ -13,9 +13,10 @@
  html{ background: var(--B); -webkit-text-size-adjust: none; }
  body{ background: var(--B); color: var(--F); min-height: 100vh;
   width: 100%; font-family: sans-serif; font-size: 17.5px; }
- html,body,h1,h2,main,video,canvas,input{ margin: 0; padding: 0;
-  box-sizing: border-box; }
- p,li{ line-height: 1.23em; }
+ html,body,h1,h2,main,input{ margin: 0; padding: 0; box-sizing: border-box; }
+ video,canvas{ margin: 0; padding: 0; box-sizing: content-box; }
+ p,li,label{ line-height: 1.23em; }
+ label,select{ display: inline-block; min-height: 20px; }
  label{ margin: 12px 3px 12px 18px; }
  input{ margin: 12px 3px 12px 3px; }
  h1{ margin: 10px 0 10px 0px; font-size: 24px; color: var(--H); }
@@ -24,11 +25,11 @@
  p{ margin: 11px 0; }
  .clear{ clear: both; }
  main{ margin: 0 auto; padding: 2px var(--PAD) 115px var(--PAD);
-  max-width: calc(2 * ( var(--VidSize) + var(--PAD) + 4px)); }
+  max-width: calc(2 * ( var(--VidSize) + var(--PAD) + 8px)); }
  #camera{ float: right; background: var(--BTN); font-size: 1.1em;
   padding: 10px; border-radius: 13px; border: 2px solid var(--H); }
  #camera.on{ background: var(--B); color: var(--F); }
- video, canvas{ display: inline-block; width: var(--VidSize); height: auto;
+ video,canvas{ display: inline-block; width: var(--VidSize); height: auto;
   margin: 10px auto; border: 1px solid var(--O); }
  @media (max-width: 692px) { /* try not to overflow narrow screens */
   :root{--PAD: 13px;}
@@ -44,7 +45,7 @@
 
 <button id="camera">Start Camera</button>
 
-<p>work in progress webcam toy<br>
+<p>wavelet filter webcam toy<br>
 status: <span id="status">loading...</span></p>
 
 <p class="clear">
@@ -54,52 +55,34 @@ Your browser does not appear to support webcam video.</video>
 <canvas id="canvas">
 </p>
 
-<h2>Wavelet Transform Settings</h2>
 <p>
-<input type="checkbox" id="invWave" name="invWave" checked />
-<label for="invWave">invert wavelet transform</label>
+<label for="levels">levels</label>
+<select name="levels" id="levels">
+ <option value="6">6</option>
+ <option value="5">5</option>
+ <option value="4">4</option>
+ <option value="3">3</option>
+ <option value="2">2</option>
+ <option value="1">1</option>
+</select>
 <label for="transform">transform</label>
 <select name="transform" id="transform">
  <option value="Linear">Linear</option>
  <option value="Haar">Haar</option>
 </select>
 <br>
-noise gates:<br>
-<label for="ngate1">1</label>
-<input type="range" id="ngate1" min="0" max="63" value="0" step="1" />
-<label for="ngate2">2</label>
-<input type="range" id="ngate2" min="0" max="63" value="0" step="1" />
-<label for="ngate3">3</label>
-<input type="range" id="ngate3" min="0" max="63" value="0" step="1" />
+<label for="squash">squash average</label>
+<input type="checkbox" id="squash" name="squash" checked /><br>
+<label for="sqbias">squash bias</label>
+<input type="range" id="sqbias" min="0" max="255" value="180" step="1" /><br>
+<label for="sqlev">squash level</label>
+<input type="range" id="sqlev" min="1" max="8" value="5" step="1" />
 <br>
-<label for="ngate4">4</label>
-<input type="range" id="ngate4" min="0" max="63" value="0" step="1" />
-<label for="ngate5">5</label>
-<input type="range" id="ngate5" min="0" max="63" value="0" step="1" />
-<label for="ngate6">6</label>
-<input type="range" id="ngate6" min="0" max="63" value="0" step="1" />
+<label for="invWave">invert wavelet transform</label>
+<input type="checkbox" id="invWave" name="invWave" checked />
 <br>
-luma bias:<br>
-<label for="bais1">1</label>
-<input type="range" id="bais1" min="0" max="7" value="0" step="1" />
-<label for="bais2">2</label>
-<input type="range" id="bais2" min="0" max="7" value="0" step="1" />
-<label for="bais3">3</label>
-<input type="range" id="bais3" min="0" max="7" value="0" step="1" />
-<br>
-<label for="bais4">4</label>
-<input type="range" id="bais4" min="0" max="7" value="0" step="1" />
-<label for="bais5">5</label>
-<input type="range" id="bais5" min="0" max="7" value="0" step="1" />
-<label for="bais6">6</label>
-<input type="range" id="bais6" min="0" max="7" value="0" step="1" />
-
-</p>
-
-<h2>Luma Settings</h2>
-<p>
+<label for="invLuma">invert luma</label>
 <input type="checkbox" id="invLuma" name="invLuma" />
-<label for="invLuma">invert</label>
 </p>
 
 <script type="module" src="main.js"></script>
