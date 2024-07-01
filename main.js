@@ -18,6 +18,7 @@ const INV_WAVE = document.querySelector('#invWave');  // Inv. wavelet checkbox
 const ONEBIT = document.querySelector('#onebit');     // 1-bit checkbox
 const ONEBITBIAS = document.querySelector('#onebitbias');  // 1-bit bias level
 const INV_LUMA = document.querySelector('#invLuma');  // Inv. luma checkbox
+const CONTRAST = document.querySelector('#contrast');  // Auto-contrast select
 
 // Detect if HTMLVideoElement.requestVideoFrameCallback can be used to sync
 // frame filtering with the frame updates of the video preview element
@@ -326,6 +327,62 @@ function waveletInvHaar(w, h, levels, luma) {
     }
 }
 
+function autoContrastHistogram(w, h, luma) {
+    const binShift = 1;
+    const bins = 256 >> binShift;
+    const binSize = 1 << binShift;
+    const half = (w * h) >> 1;
+    let minLuma = 255;
+    let maxLuma = 0;
+    // Make a histogram of luma values, and track the min/max values
+    let histo = new Uint32Array(bins);
+    for(const Y of luma) {
+        if (Y < minLuma) {
+            minLuma = Y;
+        }
+        if (Y > maxLuma) {
+            maxLuma = Y;
+        }
+        histo[Y>>binShift] += 1;
+    }
+    // scale the bin counts down to reduce noise
+    histo = histo.map(n => n >> 10);
+    // Find a peak bin for the dark values
+    let firstPeak = -1;
+    let lastPeak = -1;
+    for(let i=0; i<histo.length; i++) {
+        let n = histo[i];
+        if ((firstPeak < 0) && (n > 0)) {
+            firstPeak = i;
+        } else if ((firstPeak >= 0) && (n < histo[firstPeak])) {
+            break;
+        } else if ((firstPeak >= 0) && (n >= histo[firstPeak])) {
+            firstPeak = i;
+        }
+    }
+    // Find a peak bin for the light values
+    for(let i=histo.length-1; i>0; i--) {
+        let n = histo[i];
+        if ((lastPeak < 0) && (n > 0)) {
+            lastPeak = i;
+        } else if ((lastPeak >= 0) && (n < histo[lastPeak])) {
+            break;
+        } else if ((lastPeak >= 0) && (n >= histo[lastPeak])) {
+            lastPeak = i;
+        }
+    }
+    // Calculate a threshold midway-ish between the peaks
+    let cutoff = minLuma + ((maxLuma - minLuma) >> 1);
+    if (firstPeak >= 0 && lastPeak >= 0 && firstPeak < lastPeak) {
+        cutoff = 127 - (((firstPeak + lastPeak) * binSize) >> 1);
+    }
+    // Adjust the luma values to center on the threshold
+    for(let i=0; i<luma.length; i++) {
+        let Y = luma[i] + cutoff;
+        luma[i] = (Y > 255) ? 255 : ((Y < 0) ? 0 : Y);
+    }
+}
+
 // Process video frames
 function handleNewFrame(now, metadata) {
     // Copy video frame from video element to canvas element
@@ -357,6 +414,11 @@ function handleNewFrame(now, metadata) {
         if (INV_WAVE.checked) {
             waveletInvLinear(w, h, levels, luma);
         }
+        break;
+    }
+    switch(CONTRAST.value) {
+    case "Histogram":
+        autoContrastHistogram(w, h, luma);
         break;
     }
     if (INV_LUMA.checked) {

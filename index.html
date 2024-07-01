@@ -67,9 +67,9 @@ Your browser does not appear to support webcam video.</video>
 </select>
 <label for="transform">transform</label>
 <select name="transform" id="transform">
+ <option value="None">--none--</option>
  <option value="Haar">Haar</option>
  <option value="Linear">Linear</option>
- <option value="None">--none--</option>
 </select>
 <br>
 <label for="squash">squash average</label>
@@ -83,10 +83,18 @@ Your browser does not appear to support webcam video.</video>
 <label for="onebit">1-bit</label>
 <input type="checkbox" id="onebit" name="onebit" checked />
 <label for="onebitbias">1-bit bias</label>
-<input type="range" id="onebitbias" min="0" max="255" value="128" step="1" />
+<input type="range" id="onebitbias" min="0" max="255" value="120" step="1" />
 <br>
 <label for="invLuma">invert luma</label>
 <input type="checkbox" id="invLuma" name="invLuma" />
+<br>
+<label for="contrast">auto-contrast</label>
+<select name="contrast" id="contrast">
+ <option value="Histogram">Histogram</option>
+ <option value="None">--none--</option>
+</select>
+<br>
+
 </p>
 
 <script type="module" src="main.js"></script>
