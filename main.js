@@ -10,14 +10,14 @@ const CANVAS = document.querySelector('#canvas');   // Canvas (filter output)
 const CTX = CANVAS.getContext("2d", {willReadFrequently: true});
 
 // Wavelet Transform Controls
-const INV_WAVE = document.querySelector('#invWave');  // Inv. wavelet checkbox
-const INV_LUMA = document.querySelector('#invLuma');  // Inv. luma checkbox
 const LEVELS = document.querySelector('#levels');     // How many levels?
 const TRANSFORM = document.querySelector('#transform');  // Haar, linear, etc
-const SQUASH = document.querySelector('#squash');    // Squash average checkbox
-const SQBIAS = document.querySelector('#sqbias');    // Avg squashing luma bias
-const SQLEV = document.querySelector('#sqlev');      // Avg squashing level
-const ONEBIT = document.querySelector('#onebit');    // 1-bit checkbox
+const SQUASH = document.querySelector('#squash');     // Squash average checkbox
+const SQBIAS = document.querySelector('#sqbias');     // Avg squashing luma bias
+const INV_WAVE = document.querySelector('#invWave');  // Inv. wavelet checkbox
+const ONEBIT = document.querySelector('#onebit');     // 1-bit checkbox
+const ONEBITBIAS = document.querySelector('#onebitbias');  // 1-bit bias level
+const INV_LUMA = document.querySelector('#invLuma');  // Inv. luma checkbox
 
 // Detect if HTMLVideoElement.requestVideoFrameCallback can be used to sync
 // frame filtering with the frame updates of the video preview element
@@ -75,8 +75,9 @@ function invert(luma) {
 
 function onebit(luma) {
     let i = 0;
+    const bias = Number(ONEBITBIAS.value);
     for (const Y of luma) {
-        luma[i] = (Y < 128) ? 0 : 255;
+        luma[i] = (Y < bias) ? 0 : 255;
         i++;
     }
 }
@@ -93,7 +94,6 @@ function waveletFwdLinear(w, h, levels, luma) {
     */
     const squash = SQUASH.checked;
     const sqbias = Number(SQBIAS.value);
-    const sqlev = Number(SQLEV.value);
     let rowBuf = new Uint8Array(w);
     let colBuf = new Uint8Array(h);
     for (let level=1; level<=levels; level++) {
@@ -111,18 +111,6 @@ function waveletFwdLinear(w, h, levels, luma) {
                 let diff = (luma[odd] - prediction) >> 1;      // store at 0.5x
                 diff = (diff < -128) ? -128 : ((diff > 127) ? 127 : diff);
                 luma[odd] = diff & 0xff;
-            }
-            // Update even samples with diff signal to preserve average value
-            for (let x=1; x<cols; x+=2) {
-                const odd1 = rowBase + x + ((x>0) ? -1 : 1);
-                const even = rowBase + x + 1;
-                const odd2 = rowBase + x + ((x+1<cols) ? 1 : -1);
-                const diff1 = luma[odd1] << 24 >> 24;           // extend sign!
-                const diff2 = luma[odd2] << 24 >> 24;           // extend sign!
-                const update = (diff1 + diff2) >> 7;    // this shift is tricky
-                let avg = luma[even] + update;
-                avg = (avg < 0) ? 0 : ((avg > 255) ? 255 : avg);
-                luma[even] = avg & 0xff;
             }
             // De-interleave the even and odd signals
             for (let x=0; x<cols; x+=2) {
@@ -145,24 +133,11 @@ function waveletFwdLinear(w, h, levels, luma) {
                 diff = (diff < -128) ? -128 : ((diff > 127) ? 127 : diff);
                 luma[odd] = diff & 0xff;
             }
-            // Update even samples with diff signal
-            for (let y=0; y<rows; y+=2) {
-                const even = (y * w) + x;
-                const odd1 = (y>0) ? (even - w) : (even + w);
-                const odd2 = (y+1<rows) ? (even + w) : (even - w);
-                const diff1 = luma[odd1] << 24 >> 24;           // extend sign!
-                const diff2 = luma[odd2] << 24 >> 24;           // extend sign!
-                const update = (diff1 + diff2) >> 7;    // this shift is tricky
-                let avg = luma[even] + update;
-                avg = (avg < 0) ? 0 : ((avg > 255) ? 255 : avg);
-                luma[even] = avg & 0xff;
-            }
             // De-interleave the even and odd signals
             for (let y=0; y<rows; y+=2) {
                 let avg = luma[(y*w)+x];
                 if (squash && level==levels && (x<(cols>>1))) {
-                    avg = ((avg << 24 >> 24) - 127) >> sqlev;
-                    avg = (sqbias + avg) & 0xff;
+                    avg = sqbias;
                 }
                 colBuf[y>>1]        = avg;
                 colBuf[(rows+y)>>1] = luma[((y+1)*w)+x];
@@ -191,18 +166,6 @@ function waveletInvLinear(w, h, levels, luma) {
                 luma[(y*w)+x]     = colBuf[y>>1];
                 luma[((y+1)*w)+x] = colBuf[(rows+y)>>1];
             }
-            // Restore even samples by inverting update
-            for (let y=0; y<rows; y+=2) {
-                const even = (y * w) + x;
-                const odd1 = (y>0) ? (even - w) : (even + w);
-                const odd2 = (y+1<rows) ? (even + w) : (even - w);
-                const diff1 = luma[odd1] << 24 >> 24;           // extend sign!
-                const diff2 = luma[odd2] << 24 >> 24;           // extend sign!
-                const update = (diff1 + diff2) >> 7;    // this shift is tricky
-                let avg = luma[even] - update;
-                avg = (avg < 0) ? 0 : ((avg > 255) ? 255 : avg);
-                luma[even] = avg & 0xff;
-            }
             // Restore odd samples by inverting diff against prediction
             for (let y=0; y<rows; y+=2) {
                 const even1 = (y * w) + x;
@@ -225,18 +188,6 @@ function waveletInvLinear(w, h, levels, luma) {
             for (let x=0; x<cols; x+=2) {
                 luma[rowBase+x] = rowBuf[x>>1];
                 luma[rowBase+x+1] = rowBuf[(cols+x)>>1];
-            }
-            // Restore even samples by inverting update
-            for (let x=1; x<cols; x+=2) {
-                const odd1 = rowBase + x + ((x>0) ? -1 : 1);
-                const even = rowBase + x + 1;
-                const odd2 = rowBase + x + ((x+1<cols) ? 1 : -1);
-                const diff1 = luma[odd1] << 24 >> 24;           // extend sign!
-                const diff2 = luma[odd2] << 24 >> 24;           // extend sign!
-                const update = (diff1 + diff2) >> 7;    // this shift is tricky
-                let avg = luma[even] - update;
-                avg = (avg < 0) ? 0 : ((avg > 255) ? 255 : avg);
-                luma[even] = avg & 0xff;
             }
             // Restore odd samples by inverting diff against prediction
             for (let x=0; x<cols; x+=2) {
@@ -261,7 +212,6 @@ function waveletFwdHaar(w, h, levels, luma) {
     //   Section 1.3 Haar and Lifting
     const squash = SQUASH.checked;
     const sqbias = Number(SQBIAS.value);
-    const sqlev = Number(SQLEV.value);
     let rowBuf = new Uint8Array(w);
     let colBuf = new Uint8Array(h);
     for (let level=1; level<=levels; level++) {
@@ -303,8 +253,7 @@ function waveletFwdHaar(w, h, levels, luma) {
                 // Store results in Uint8 buffer
                 let avg = (a >> 2) & 0xff;
                 if (squash && level==levels && (x<(cols>>1))) {
-                    avg = ((avg << 24 >> 24) - 127) >> sqlev;
-                    avg = (sqbias + avg) & 0xff;
+                    avg = sqbias;
                 }
                 colBuf[y>>1]        = avg;
                 colBuf[(rows+y)>>1] = (b >> 2) & 0xff;
@@ -380,12 +329,15 @@ function waveletInvHaar(w, h, levels, luma) {
 // Process video frames
 function handleNewFrame(now, metadata) {
     // Copy video frame from video element to canvas element
-    const w = VIDEO.videoWidth;
-    const h = VIDEO.videoHeight;
+    const w = CANVAS.width;
+    const h = CANVAS.width;
     const levels = Number(LEVELS.value);
     CANVAS.width = w;
     CANVAS.height = h;
-    CTX.drawImage(VIDEO, 0, 0, w, h);
+    // Crop a square out of the center of the video frame (digital zoom)
+    const srcX = (VIDEO.videoWidth - w) >> 1;
+    const srcY = (VIDEO.videoHeight - h) >> 1;
+    CTX.drawImage(VIDEO, srcX, srcY, w, h, 0, 0, w, h);
     // Apply filter to the pixels of the canvas element
     // getImageData returns RGBA Uint8ClampedArray of pixels in row-major order
     const imageData = CTX.getImageData(0, 0, w, h);
@@ -428,8 +380,8 @@ function handleNewFrame(now, metadata) {
 // Attempt to open video stream from default camera
 function startVideo() {
     const constraints = {video: {
-        width: 320,
-        height: 320,
+        width: 480,
+        height: 480,
         facingMode: "environment",
         frameRate: 15,
     }};
